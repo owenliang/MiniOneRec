@@ -403,7 +403,7 @@ class EvalD3Dataset(Dataset):
     def __getitem__(self, idx):
         return self.inputs[idx]
     
-
+# RL数据集
 class SidDataset(Dataset):
     def __init__(self, train_file, max_len=2048, sample=-1, seed=0, category="", dedup=False):
         self.data = pd.read_csv(train_file)
@@ -493,7 +493,7 @@ class SidSFTDataset(Dataset):
         self.max_len = max_len
         self.category = category
         self.dedup = dedup
-        self.get_inputs()  
+        self.get_inputs()   # 初始化数据
     
     def __len__(self):
         return len(self.data)
@@ -509,7 +509,7 @@ class SidSFTDataset(Dataset):
         L = len(row['history_item_sid']) 
         history = ""
         history_str = ", ".join(row["history_item_sid"])
-        for i in range(L):
+        for i in range(L): # 多个历史商品的SID，用逗号间隔，最终<a_165><b_107><c_44>, <a_104><b_118><c_176>
             if i == 0:
                 history += row['history_item_sid'][i]
             else:
@@ -522,6 +522,19 @@ class SidSFTDataset(Dataset):
                 "history_str": history_str,
                 "dedup": target_item_sid == last_history_item_sid}
     
+    '''
+    整个提示词：
+    Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request. 
+
+    ### Instruction:
+    Can you predict the next possible item that the user may expect?
+
+    ### User Input: 
+    The user has interacted with items <a_165><b_107><c_44>, <a_104><b_118><c_176> in chronological order. Can you predict the next possible item that the user may expect?
+
+    ### Response:
+    <a_210><b_156><c_39>
+    '''
     def pre(self, idx):
         instruction = """Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request. 
 
@@ -529,12 +542,14 @@ class SidSFTDataset(Dataset):
 Can you predict the next possible item that the user may expect?
 
 """
+        # 上面的提示词作为开头
         tokens = self.tokenizer.encode(instruction, bos=True, eos=False)
         
-        history = self.get_history(self.data.iloc[idx])
+        # 
+        history = self.get_history(self.data.iloc[idx]) # <a_165><b_107><c_44>, <a_104><b_118><c_176>
         # print("**********************")
         # print("history: ", history)
-        target_item = history['output']
+        target_item = history['output'] # <a_210><b_156><c_39>\n
         history['output'] = ''
         negative_prompt_ids = copy.deepcopy(tokens)
         
@@ -548,17 +563,19 @@ Can you predict the next possible item that the user may expect?
         
         attention_mask = [1] * len(tokens)
         
+        # 推理测试时候到这里就可以返回了，后续的是model生成
         if self.test:
             return {
                 "input_ids": tokens,
                 "attention_mask": attention_mask,
             }    
         
+        # 训练则继续拼接答案
         golden_tokens = self.tokenizer.encode(target_item, bos=False, eos=True)
         input_prompt_len = len(tokens)
         tokens = tokens + golden_tokens
         attention_mask = [1] * len(tokens)
-        labels = [-100] * input_prompt_len + tokens[input_prompt_len:]
+        labels = [-100] * input_prompt_len + tokens[input_prompt_len:] # 训练时候loss忽略掉系统提示词部分，只做答案部分的loss
         
         if len(tokens) >= self.max_len:
             print(len(tokens))

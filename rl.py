@@ -114,8 +114,8 @@ def train(
     # prompt2history = {**train_data.prompt2history, **eval_data.prompt2history}
     # history2target = {**train_data.history2target, **eval_data.history2target}
 
-    prompt2history = {}
-    history2target = {}
+    prompt2history = {}  # 提示词里面有哪些history
+    history2target = {}  # history要预测哪个target
     
     # Collect prompt2history and history2target from all train datasets
     for dataset in train_datasets:
@@ -153,10 +153,11 @@ def train(
 
     print("Load item_ada_embd successfully.")
 
+    # 给预测的商品rank给不同的惩罚分
     ndcg_rewards = [-1.0/math.log2(i+2) for i in range(num_generations)]
     ndcg_rewards = [-elm/sum(ndcg_rewards) for elm in ndcg_rewards]
 
-
+    # Rank奖励
     def ndcg_rule_reward(prompts, completions):
         history = [prompt2history[prompt] for prompt in prompts]
         targets = [history2target[elm] for elm in history]
@@ -165,24 +166,44 @@ def train(
         flag = False
         lis = []
 
+        '''
+        prompts = [
+            "用户历史是[1][2][3]，预测下一个商品?",  # 样本1的prompt
+            "用户历史是[1][2][3]，预测下一个商品?",  # 样本1的prompt（重复）
+            "用户历史是[1][2][3]，预测下一个商品?",  # 样本1的prompt（重复）
+            "用户历史是[4][5][6]，预测下一个商品?",  # 样本2的prompt
+            "用户历史是[4][5][6]，预测下一个商品?",  # 样本2的prompt（重复）
+            "用户历史是[4][5][6]，预测下一个商品?",  # 样本2的prompt（重复）
+        ]
+
+        completions = [
+            "[10]\n",   # 样本1的第1次生成
+            "[15]\n",   # 样本1的第2次生成
+            "[20]\n",   # 样本1的第3次生成
+            "[30]\n",   # 样本2的第1次生成
+            "[35]\n",   # 样本2的第2次生成
+            "[40]\n",   # 样本2的第3次生成
+        ]
+        '''
         for i, completion in enumerate(completions):
 
             if completion.strip("\n\"") == targets[i].strip("\n\""):
                 flag = True
-                lis.append(0.0)
+                lis.append(0.0) # 答对给0分
             else:
-                lis.append(ndcg_rewards[i%num_generations])
+                lis.append(ndcg_rewards[i%num_generations]) # 打错给负分，且由于开启了beam search，所以靠前的completion是概率更高的回答，打压要更严
             
-            if (i+1)%num_generations == 0:
+            if (i+1)%num_generations == 0: # batch中每个prompt生成num_generations个completion，判断是否一组结束
                 if flag:
-                    rewards.extend(lis)
+                    rewards.extend(lis) # 该prompt的多个completion的打分（注意是extend进去，扁平的分数数组）
                 else:
-                    rewards.extend([0.0] * repeat)
+                    rewards.extend([0.0] * repeat) # 完全没答对过，全0分
                 flag = False
                 lis = []
         
         return rewards
 
+    # 对错奖励，最简单的reward
     def rule_reward(prompts, completions):
         history = [prompt2history[prompt] for prompt in prompts]
         targets = [history2target[elm] for elm in history]
@@ -191,9 +212,9 @@ def train(
         for i, completion in enumerate(completions):
 
             if completion.strip("\n\" ") == targets[i].strip("\n\" "):
-                rewards.append(1.0)
+                rewards.append(1.0) # 回答对1分
             else:
-                rewards.append(0.0)
+                rewards.append(0.0) # 回答错0分
         return rewards
 
     def semantic_reward(prompts, completions):
@@ -208,10 +229,12 @@ def train(
                 print(f"Invalid item: {completion}")
                 print("==============================")
         completion_ids = [item2id[elm] for elm in completions]
+        # 更加高级的reward，正确sid和预测sid的向量距离分数，这里具体没看是什么算法了
         rewards =  torch.cosine_similarity(item_ada_embd[target_ids], item_ada_embd[completion_ids], dim=-1)
         print(rewards)
         return rewards
 
+    # 协同过滤奖励，具体就不看了
     def cf_reward(prompts, completions):
         history = [prompt2history[prompt] for prompt in prompts]
         history_list = [elm.split("::") for elm in history]
@@ -248,7 +271,7 @@ def train(
 
     if reward_type == "rule":
         reward_fun = rule_reward
-    elif reward_type == "ranking":
+    elif reward_type == "ranking": # 这个是最基础的，答对了打分
         reward_fun = [rule_reward, ndcg_rule_reward]
     elif reward_type == "ranking_only":
         reward_fun = ndcg_rule_reward

@@ -111,6 +111,7 @@ if model.rq.vq_layers[-1].sk_epsilon == 0.0:
 
 tt = 0
 #There are often duplicate items in the dataset, and we no longer differentiate them
+# 尽量避免不同item的sid冲突，会对sid冲突的商品重新做量化
 while True:
     if tt >= 20 or check_collision(all_indices_str):
         break

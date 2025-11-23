@@ -479,6 +479,7 @@ class ReReTrainer(Trainer):
             if self.beam_search:
                  #* temperature 默认为 1.0
                 print(f"self.temperature: {self.temperature}")
+                # 这里启用transformer的beam search生成策略，不断基于当前最高打分的句子继续向后生成，并保留新的高分句子
                 self.generation_config = GenerationConfig(
                     max_new_tokens=self.max_completion_length,
                     length_penalty=self.length_penalty,
@@ -521,7 +522,7 @@ class ReReTrainer(Trainer):
             if isinstance(reward_func, PreTrainedModel):
                 self.reward_funcs[i] = self.accelerator.prepare_model(reward_func, evaluation_mode=True)
 
-        
+            
         with open(self.info_file, 'r') as f:
             info = f.readlines()
             # Parse new format: semantic_id \t item_title \t item_id
@@ -532,6 +533,7 @@ class ReReTrainer(Trainer):
             info_semantic = [f'''### Response:\n{_}''' for _ in semantic_ids]
             info_titles = [f'''### Response:\n{_}''' for _ in item_titles]
 
+            # 读所有商品的SID，拼成### Response:\n{SID}的样子
             info = info_semantic
 
         # with open(self.info_file, 'r') as f:
@@ -543,17 +545,18 @@ class ReReTrainer(Trainer):
         if self.base_model.lower().find("llama") > -1: 
             prefixID = [tokenizer(_).input_ids[1:] for _ in info]
         else:
-            prefixID = [tokenizer(_).input_ids for _ in info]
+            prefixID = [tokenizer(_).input_ids for _ in info] # 所有### Response:\n{SID}的token化
         
         if self.base_model.lower().find("gpt2") > -1:
             prefix_index = 4
         else:
-            prefix_index = 3
-            
+            prefix_index = 3 # 这个是跳过### Response:\n的意思
+        
+        # 
         self.hash_dict = dict()
         # sasrec_dict = dict()
         for index, ID in enumerate(prefixID):
-            ID.append(tokenizer.eos_token_id)
+            ID.append(tokenizer.eos_token_id) # ### Response:\n{SID}{EOS}
             for i in range(prefix_index, len(ID)):
                 if i == prefix_index:
                     hash_number = self.get_hash(ID[:i])
@@ -562,10 +565,11 @@ class ReReTrainer(Trainer):
                 if hash_number not in self.hash_dict:
                     self.hash_dict[hash_number] = set()
                     # sasrec_dict[hash_number] = set()
-                self.hash_dict[hash_number].add(ID[i])
+                self.hash_dict[hash_number].add(ID[i]) # 构建response前缀token+下一个token的关联关系
 
+        # 整体叫做前缀树
         for key in self.hash_dict.keys():
-            self.hash_dict[key] = list(self.hash_dict[key])
+            self.hash_dict[key] = list(self.hash_dict[key]) # 最终就是prefix -> [可选token1,可选token2]这样的关系
 
         self.test_generation_config = GenerationConfig(max_new_tokens=self.max_completion_length,
                                                             length_penalty=self.length_penalty,
@@ -680,6 +684,7 @@ class ReReTrainer(Trainer):
             prompt_ids = prompt_ids[:, -self.max_prompt_length :]
             prompt_mask = prompt_mask[:, -self.max_prompt_length :]
 
+        # 用于控制生成的SID（3个连续token是存在的商品）
         ccc = ConstrainedLogitsProcessor(
                 # guidance_scale=1.0,
                 # cf_logits=None,
@@ -779,9 +784,10 @@ class ReReTrainer(Trainer):
                     dedup_prompt_ids = torch.stack(dedup_prompt).to(device)
                     dedup_prompt_mask = torch.stack(dedup_mask).to(device)
                     # print(f"dedup_prompt_ids: {dedup_prompt_ids.shape}")
+                    # 在做样本生成时，采用bean
                     prompt_completion_ids = unwrapped_model.generate(
                         dedup_prompt_ids, attention_mask=dedup_prompt_mask, generation_config=self.generation_config,
-                        logits_processor=self.logits_processor,
+                        logits_processor=self.logits_processor, # 这里transformer generate时支持自定义logits_processor，可以对生成的结果进行判断
                     )
                     # print(f"prompt_ids: {prompt_ids.shape}")
                     # print(f"prompt_completion_ids: {prompt_completion_ids.shape}")

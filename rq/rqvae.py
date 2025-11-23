@@ -69,9 +69,9 @@ if __name__ == '__main__':
     """build dataset"""
     data = EmbDataset(args.data_path)
     model = RQVAE(in_dim=data.dim,
-                  num_emb_list=args.num_emb_list,
-                  e_dim=args.e_dim,
-                  layers=args.layers,
+                  num_emb_list=args.num_emb_list, # [256,256,256]
+                  e_dim=args.e_dim, # 32
+                  layers=args.layers, # [2048,1024,512,256,128,64]
                   dropout_prob=args.dropout_prob,
                   bn=args.bn,
                   loss_type=args.loss_type,

@@ -27,7 +27,7 @@ class ResidualVectorQuantizer(nn.Module):
                                                         kmeans_iters = self.kmeans_iters,
                                                         sk_epsilon=sk_epsilon,
                                                         sk_iters=sk_iters)
-                                        for n_e, sk_epsilon in zip(n_e_list,sk_epsilons) ])
+                                        for n_e, sk_epsilon in zip(n_e_list,sk_epsilons) ]) # 一共L层VQ
 
     def get_codebook(self):
         all_codebook = []
@@ -42,10 +42,11 @@ class ResidualVectorQuantizer(nn.Module):
 
         x_q = 0
         residual = x
+        # 逐层量化
         for quantizer in self.vq_layers:
-            x_res, loss, indices = quantizer(residual, use_sk=use_sk)
-            residual = residual - x_res
-            x_q = x_q + x_res
+            x_res, loss, indices = quantizer(residual, use_sk=use_sk) # 量化当前残差
+            residual = residual - x_res # 更新残差
+            x_q = x_q + x_res # 累积量化结果
 
             all_losses.append(loss)
             all_indices.append(indices)

@@ -44,9 +44,11 @@ class RQVAE(nn.Module):
         self.sk_iters = sk_iters
 
         self.encode_layer_dims = [self.in_dim] + self.layers + [self.e_dim]
+        # 对emb多次Linear计算，输出维度e_dim
         self.encoder = MLPLayers(layers=self.encode_layer_dims,
                                  dropout=self.dropout_prob,bn=self.bn)
 
+        # RQ-VAE量化
         self.rq = ResidualVectorQuantizer(num_emb_list, e_dim,
                                           beta=self.beta,
                                           kmeans_init = self.kmeans_init,
@@ -55,6 +57,8 @@ class RQVAE(nn.Module):
                                           sk_iters=self.sk_iters,)
 
         self.decode_layer_dims = self.encode_layer_dims[::-1]
+        
+        # 多次Linear计算，输入e_dim，输出in_dim，和encoder相反
         self.decoder = MLPLayers(layers=self.decode_layer_dims,
                                        dropout=self.dropout_prob,bn=self.bn)
 

@@ -50,9 +50,9 @@ class TokenExtender:
             self._load_data()
         
         self.new_tokens = set()
-        for index in self.indices.values():
+        for index in self.indices.values(): # ["<a_251>", "<b_7>", "<c_107>"]
             for token in index:
-                self.new_tokens.add(token)
+                self.new_tokens.add(token) # "<a_251>"
         self.new_tokens = sorted(list(self.new_tokens))
         
         return self.new_tokens
@@ -162,6 +162,7 @@ def train(
             model.resize_token_embeddings(len(tokenizer))
 
     # Freeze LLM parameters if required
+    # 只训练新增的token embedding，其他全部冻结
     if freeze_LLM:
         print("Freezing LLM parameters, only training new token embeddings")
         for param in model.parameters():
@@ -190,9 +191,11 @@ def train(
         total_params     = sum(p.numel() for p in model.parameters())
         print(f"Trainable parameters (with grad-mask): {trainable_params:,} / "
             f"{total_params:,} ({100*trainable_params/total_params:.2f}%)")
-        
+
+    # 不同的训练模式构成了整个训练集    
     train_datasets = []
     # train_data1 = SFTData(train_file=train_file, tokenizer=tokenizer, max_len=cutoff_len,  sample=sample, seed=seed, category=category)
+    # 主要看这个
     train_data1 = SidSFTDataset(train_file=train_file, tokenizer=tokenizer, max_len=cutoff_len,  sample=sample, seed=seed, category=category)
     train_datasets.append(train_data1)
     train_data2 = SidItemFeatDataset(item_file=item_meta_path, index_file=sid_index_path, tokenizer=tokenizer, max_len=cutoff_len,  sample=sample, seed=seed, category=category)
@@ -204,6 +207,7 @@ def train(
     train_data5 = TitleHistory2SidSFTDataset(train_file=train_file, item_file=item_meta_path, index_file=sid_index_path, tokenizer=tokenizer, max_len=cutoff_len, sample=sample, seed=seed, category=category)
     train_datasets.append(train_data5)
     train_data = ConcatDataset(train_datasets)
+
     val_data = SidSFTDataset(train_file=eval_file, tokenizer=tokenizer, max_len=cutoff_len,  sample=sample, seed=seed, category=category)
     # val_data = SFTData(train_file=eval_file, tokenizer=tokenizer, max_len=cutoff_len,  sample=20000, seed=seed, category=category)
     print("LOAD DATA FINISHED")    
@@ -217,6 +221,7 @@ def train(
         model.is_parallelizable = True
         model.model_parallel = True
     
+    # HF数据集是column name -> values的列存格式
     sample_frac = 1
     hf_train_dataset = HFDataset.from_dict({k: [v[k] for v in train_data] for k in train_data[0].keys()})
     hf_train_dataset = hf_train_dataset.shuffle(seed=42).select(range(int(sample_frac * len(hf_train_dataset))))

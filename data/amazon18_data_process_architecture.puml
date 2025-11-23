@@ -1,0 +1,91 @@
+@startuml
+skinparam componentStyle rectangle
+skinparam shadowing false
+skinparam linetype ortho
+
+title Amazon18 Data Processing Pipeline
+
+package "MiniOneRec" {
+  package "Data Preprocessing" {
+    [Raw Amazon Data] as rawData
+    [Metadata Loader] as metaLoader
+    [Reviews Loader] as revLoader
+    [Text Cleaner] as textCleaner
+    [K-Core Filter] as kCoreFilter
+    [Time Range Adjuster] as timeAdjuster
+    
+    rawData --> metaLoader : Metadata
+    rawData --> revLoader : Reviews
+    metaLoader --> textCleaner
+    revLoader --> textCleaner
+    textCleaner --> kCoreFilter
+    
+    kCoreFilter --> timeAdjuster : Item Count < 3000?
+    timeAdjuster --> metaLoader : Expand Time Range
+  }
+  
+  package "Data Transformation" {
+    [Interaction Converter] as interConverter
+    [Sequence Generator] as seqGenerator
+    [Dataset Splitter] as datasetSplitter
+    
+    kCoreFilter --> interConverter
+    interConverter --> seqGenerator
+    seqGenerator --> datasetSplitter
+  }
+  
+  package "Feature Engineering" {
+    [Item Feature Extractor] as itemFeatureExtractor
+    [Review Data Loader] as reviewDataLoader
+    
+    interConverter --> itemFeatureExtractor
+    interConverter --> reviewDataLoader
+  }
+  
+  package "Output Files" {
+    [Train Dataset] as trainDataset
+    [Validation Dataset] as valDataset
+    [Test Dataset] as testDataset
+    [Item Features] as itemFeatures
+    [Review Data] as reviewData
+    [User-Item Interactions] as userItemInter
+    [ID Mappings] as idMappings
+    
+    datasetSplitter --> trainDataset : 80%
+    datasetSplitter --> valDataset : 10%
+    datasetSplitter --> testDataset : 10%
+    
+    itemFeatureExtractor --> itemFeatures
+    reviewDataLoader --> reviewData
+    interConverter --> userItemInter
+    interConverter --> idMappings
+  }
+}
+
+note right of rawData
+  Includes:
+  - Product metadata (title, description, etc.)
+  - User reviews with timestamps
+end note
+
+note right of kCoreFilter
+  Filters data using k-core algorithm:
+  - Removes users with < k interactions
+  - Removes items with < k interactions
+  - Iteratively applies filtering until stable
+end note
+
+note right of datasetSplitter
+  Splits data chronologically:
+  - 80% for training
+  - 10% for validation
+  - 10% for testing
+end note
+
+note bottom of seqGenerator
+  Generates sliding window sequences:
+  - Max history of 10 items
+  - Sorted by timestamp
+end note
+
+@enduml
